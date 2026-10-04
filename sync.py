@@ -7,13 +7,13 @@ alguna verificación falla; en ese caso no se debe subir nada.
 
 Qué hace:
 - Quita el libro de ventas cifrado y los costos de los productos.
-- Pone el link público (Netlify) como link para compartir.
+- Pone el link público (Cloudflare) como link para compartir.
 - Agrega la vista previa para WhatsApp/Instagram (título, descripción, logo).
 """
 import json, re, sys
 from pathlib import Path
 
-PUBLIC_URL = "https://bubba-la-tienda.netlify.app"
+PUBLIC_URL = "https://bubba-la-tienda.juaraneda01.workers.dev"
 TITLE = "Bubba L.A. · Detallitos Sorpresas"
 DESC = "Arma tu detallito sorpresa: ramos, globos, cosmética y accesorios. Cotiza al instante y envía tu pedido por WhatsApp."
 HERE = Path(__file__).parent
