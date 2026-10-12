@@ -28,6 +28,15 @@ def fail(msg):
 
 def main(src):
     h = Path(src).read_text(encoding="utf-8")
+    # La plataforma de Claude a veces envuelve la página publicada en un esqueleto HTML propio.
+    # Si hay dos <!doctype html> al inicio de línea, nos quedamos solo con la página interna.
+    # (El código de la página también contiene "<!doctype html>" dentro de un texto, pero no al inicio de línea.)
+    docs = [m.start() for m in re.finditer(r"^<!doctype html>", h, re.I | re.M)]
+    if len(docs) > 1:
+        ends = [m.end() for m in re.finditer(r"^</html>", h, re.I | re.M)]
+        if not ends or ends[-1] < docs[1]:
+            fail("la página interna no cierra con </html>")
+        h = h[docs[1]:ends[-1]]
     m = RX.search(h)
     if not m:
         fail("no se encontró el bloque de estado en la página en vivo")
@@ -76,6 +85,10 @@ def main(src):
         fail("quedaron costos en la copia pública")
     if chk["negocio"].get("link") != PUBLIC_URL:
         fail("el link para compartir no es el público")
+    if len(re.findall(r"^<!doctype html>", pub, re.I | re.M)) != 1:
+        fail("la copia pública quedó con más de un documento")
+    if pub.find('property="og:title"') > pub.find("<body"):
+        fail("la vista previa quedó fuera del encabezado")
     if len(chk["productos"]) != len(st["productos"]):
         fail("cambió la cantidad de productos")
 
