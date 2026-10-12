@@ -370,6 +370,14 @@ body{background-color:#c2f1fd}
 .cta.ghost:hover{background:var(--purple-tint)}
 .linkbox{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
 .linkbox .field{flex:1; min-width:220px}
+/* ---------- filtros y orden ---------- */
+.ftools{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:-4px 0 16px}
+.ftools select.field{width:auto; flex:1 1 150px; padding:8px 10px; font-size:14px; font-weight:700; color:var(--ink)}
+.fchip{display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border:1.5px solid var(--purple-soft); border-radius:999px; font-size:13.5px; font-weight:800; color:var(--purple); background:var(--surface); cursor:pointer; user-select:none}
+.fchip input{width:16px; height:16px; margin:0; accent-color:var(--purple)}
+.fchip:has(input:checked){background:var(--purple-tint); border-color:var(--purple)}
+.freset{border:0; background:transparent; color:var(--pink); font-weight:800; text-decoration:underline; padding:6px 4px; font-size:13.5px}
+@media (max-width:560px){ .ftools select.field{flex:1 1 calc(50% - 8px)} }
 </style>
 </head>
 <body>
@@ -411,7 +419,7 @@ let L=null;                       // libro de ventas descifrado (solo dueña)
 let sess=null;                    // clave de sesión del libro
 let owner=false, dirty=false, armed=null;
 const api={artifact:null,downloads:null};
-const ui={view:'tienda',cat:'Todos',q:'',tab:'resumen',period:'mes',invCat:'Todos',invQ:'',openSale:null,sale:null,import:null};
+const ui={view:'tienda',cat:'Todos',q:'',sort:'rec',fp:'all',fstock:false,fmay:false,tab:'resumen',period:'mes',invCat:'Todos',invQ:'',openSale:null,sale:null,import:null};
 let cart={}, meta={name:'',notes:''};
 
 const P=id=>S.productos.find(p=>p.id===id);
@@ -562,15 +570,33 @@ function cardHTML(p){
    +'<output>'+n+'</output>'
    +'<button type="button" class="qb plus" data-a="inc" aria-label="Agregar uno: '+esc(p.n)+'"'+((oos||n>=maxQty(p))?' disabled':'')+'>+</button></div></article>';
 }
+const PRANGES={all:[0,Infinity],a:[0,1000],b:[1001,3000],c:[3001,Infinity]};
+const filtersOn=()=>ui.sort!=='rec'||ui.fp!=='all'||ui.fstock||ui.fmay;
+const idNum=p=>parseInt(String(p.id).replace(/\D/g,''),10)||0;
 function storeItems(){
-  const q=norm(ui.q), sc=scope();
-  return S.productos.filter(p=>p.v!==false&&sc.includes(p.c)&&(ui.cat==='Todos'||p.c===ui.cat)&&(!q||norm(p.n).includes(q)));
+  const q=norm(ui.q), sc=scope(), r=PRANGES[ui.fp]||PRANGES.all;
+  const it=S.productos.filter(p=>p.v!==false&&sc.includes(p.c)&&(ui.cat==='Todos'||p.c===ui.cat)&&(!q||norm(p.n).includes(q))
+    &&p.p>=r[0]&&p.p<=r[1]&&(!ui.fstock||p.s!==0)&&(!ui.fmay||(cfg().activo&&elig(p))));
+  const cmp={pa:(a,b)=>a.p-b.p,pd:(a,b)=>b.p-a.p,az:(a,b)=>a.n.localeCompare(b.n,'es',{sensitivity:'base'}),nu:(a,b)=>idNum(b)-idNum(a)}[ui.sort];
+  return cmp?it.slice().sort(cmp):it;
+}
+function filtersHTML(){
+  const o=(v,l,cur)=>'<option value="'+v+'"'+(cur===v?' selected':'')+'>'+l+'</option>';
+  const may=cfg().activo&&scope().some(c=>BELLEZA.includes(c));
+  return '<div class="ftools" role="group" aria-label="Ordenar y filtrar productos">'
+   +'<select class="field" id="fSort" aria-label="Ordenar productos">'+o('rec','Ordenar: recomendados',ui.sort)+o('pa','Precio: menor a mayor',ui.sort)+o('pd','Precio: mayor a menor',ui.sort)+o('az','Nombre: A a la Z',ui.sort)+o('nu','Más nuevos primero',ui.sort)+'</select>'
+   +'<select class="field" id="fPrice" aria-label="Filtrar por precio">'+o('all','Todos los precios',ui.fp)+o('a','Hasta $1.000',ui.fp)+o('b','$1.001 a $3.000',ui.fp)+o('c','Más de $3.000',ui.fp)+'</select>'
+   +'<label class="fchip"><input type="checkbox" id="fStock"'+(ui.fstock?' checked':'')+'>Solo disponibles</label>'
+   +(may?'<label class="fchip"><input type="checkbox" id="fMay"'+(ui.fmay?' checked':'')+'>Con precio por mayor</label>':'')
+   +'<button type="button" class="freset" id="fReset" data-a="freset"'+(filtersOn()?'':' hidden')+'>Quitar filtros</button></div>';
 }
 function renderList(){
   const it=storeItems(), l=$('#list'); if(!l)return;
   $('#count').textContent=it.length+(it.length===1?' producto':' productos');
   l.innerHTML=it.map(cardHTML).join('');
-  $('#none').hidden=it.length>0;
+  const none=$('#none'); none.hidden=it.length>0;
+  none.textContent=filtersOn()?'No hay productos con estos filtros. Prueba quitando alguno.':'No encontramos productos con esa búsqueda. Prueba con otra palabra.';
+  const fr=$('#fReset'); if(fr) fr.hidden=!filtersOn();
 }
 function syncCard(id){
   const c=$('.card[data-id="'+id+'"]'); if(!c)return; const p=P(id), n=cart[id]||0;
@@ -588,6 +614,7 @@ function storeHTML(){
   +'<nav class="tabs" aria-label="Categorías">'+tabs+'</nav>'
   +'<div class="layout"><section class="panel products" aria-labelledby="pTitle"><div class="products-top"><h3 id="pTitle">Elige tus productos</h3><span id="count" aria-live="polite"></span></div>'
   +'<div class="search"><input id="q" type="search" placeholder="Buscar producto" aria-label="Buscar producto" autocomplete="off" value="'+esc(ui.q)+'"><button class="btn-dark" type="button" data-a="clearq">Limpiar</button></div>'
+  +filtersHTML()
   +'<div class="grid" id="list"></div><p class="no-results" id="none" hidden>No encontramos productos con esa búsqueda. Prueba con otra palabra.</p></section>'
   +'<aside class="panel quote" id="quote" aria-labelledby="qTitle"><div class="q-head"><h3 id="qTitle" tabindex="-1">Tu cotización</h3><p>Revisa tu detallito sorpresa</p></div><div class="q-body">'
   +'<div id="qEmpty" class="empty"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8h12l-1 12H7L6 8z"/><path d="M9 8a3 3 0 0 1 6 0"/></svg>No has agregado productos todavía.<small>Toca + en cualquier producto para empezar.</small></div>'
@@ -1242,6 +1269,9 @@ document.addEventListener('click',async e=>{
     case 'goq': { const q=$('#quote'); if(q){ const r=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches; q.scrollIntoView({behavior:r?'auto':'smooth',block:'start'}); $('#qTitle').focus({preventScroll:true}); } break; }
     case 'cat': ui.cat=b.dataset.c; $$('.tabs .tab').forEach(t=>t.setAttribute('aria-pressed',String(t.dataset.c===ui.cat))); renderList(); break;
     case 'clearq': ui.q=''; ui.cat='Todos'; $('#q').value=''; $$('.tabs .tab').forEach(t=>t.setAttribute('aria-pressed',String(t.dataset.c==='Todos'))); renderList(); $('#q').focus(); break;
+    case 'freset': ui.sort='rec'; ui.fp='all'; ui.fstock=false; ui.fmay=false;
+      { const a1=$('#fSort'),a2=$('#fPrice'),a3=$('#fStock'),a4=$('#fMay'); if(a1)a1.value='rec'; if(a2)a2.value='all'; if(a3)a3.checked=false; if(a4)a4.checked=false; }
+      renderList(); { const s=$('#fSort'); if(s) s.focus(); } break;
     case 'inc': { const pid=b.closest('.card').dataset.id; setQty(pid,(cart[pid]||0)+1); break; }
     case 'dec': { const pid=b.closest('.card').dataset.id; setQty(pid,(cart[pid]||0)-1); break; }
     case 'rm': setQty(id,0); break;
@@ -1326,6 +1356,9 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',async e=>{
   const t=e.target;
+  if(t.id==='fSort'||t.id==='fPrice'||t.id==='fStock'||t.id==='fMay'){
+    if(t.id==='fSort') ui.sort=t.value; else if(t.id==='fPrice') ui.fp=t.value; else if(t.id==='fStock') ui.fstock=t.checked; else ui.fmay=t.checked;
+    renderList(); return; }
   if(t.dataset&&t.dataset.imgfor&&t.files[0]){ await setImage(t.dataset.imgfor,t.files[0]); t.value=''; return; }
   if(t.dataset&&t.dataset.imgmap!=null&&ui.imgs){ ui.imgs[+t.dataset.imgmap].pid=t.value; const b=$('[data-a="imgapply"]'); const ok=ui.imgs.filter(x=>x.uri&&x.pid).length; if(b){ b.disabled=!ok; b.textContent='Aplicar '+ok+' fotos y publicar'; } return; }
   if(t.id==='imgs'&&t.files.length){ const items=Array.from(t.files).filter(f=>/^image\//.test(f.type)||IMG_EXT.test(f.name)).map(f=>({name:f.name,blob:f})); t.value=''; if(!items.length){ toast('No encontré imágenes en tu selección.'); return; } await prepareImages(items); return; }
